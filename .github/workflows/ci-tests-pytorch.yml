@@ -266,21 +266,21 @@ jobs:
           coverage xml
         working-directory: tests/tests_pytorch
 
-      - if: ${{ !cancelled() }}
-        name: Upload test results to Codecov
-        uses: codecov/test-results-action@v1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+      # - if: ${{ !cancelled() }}
+      #   name: Upload test results to Codecov
+      #   uses: codecov/test-results-action@v1
+      #   with:
+      #     token: ${{ secrets.CODECOV_TOKEN }}
 
-      - continue-on-error: true
-        name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          fail_ci_if_error: false
-          file: tests/tests_pytorch/coverage.xml
-          flags: ${{ env.COVERAGE_SCOPE }},cpu,pytest-full,python${{ matrix.python-version }},pytorch${{ matrix.pytorch-version }}
-          name: CPU-coverage
-          token: ${{ secrets.CODECOV_TOKEN }}
+      # - continue-on-error: true
+        # name: Upload coverage to Codecov
+        # uses: codecov/codecov-action@v5
+        # with:
+        #   fail_ci_if_error: false
+        #   file: tests/tests_pytorch/coverage.xml
+        #   flags: ${{ env.COVERAGE_SCOPE }},cpu,pytest-full,python${{ matrix.python-version }},pytorch${{ matrix.pytorch-version }}
+        #   name: CPU-coverage
+        #   token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Display Energy Results
         id: display-measurement
