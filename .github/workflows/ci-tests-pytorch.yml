@@ -143,6 +143,7 @@ jobs:
     timeout-minutes: 50
     steps:
       - name: Start Energy Measurement
+        id: start-measurement
         uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
         with:
           json-output: true
@@ -157,6 +158,14 @@ jobs:
 
       - name: Basic setup
         run: pip install -q -r .actions/requirements.txt
+
+      - id: measurement-basic-setup
+        name: Record Measurement After Basic setup
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Basic setup
+          task: get-measurement
 
       - name: Set minimal dependencies
         if: ${{ matrix.requires == 'oldest' }}
@@ -174,6 +183,14 @@ jobs:
             python adjust-torch-versions.py $f ${{ matrix.pytorch-version }}
           done
           cat requirements/pytorch/base.txt
+
+      - id: measurement-dependencies
+        name: Record Measurement After Dependencies
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Dependencies setup
+          task: get-measurement
 
       - name: pip wheels cache
         uses: actions/cache/restore@v4
@@ -200,6 +217,14 @@ jobs:
             --extra-index-url="${TORCH_URL}" --find-links="${PYPI_CACHE_DIR}"
           pip list
         timeout-minutes: 20
+
+      - id: measurement-install
+        name: Record Measurement After Package Installation
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Package installation
+          task: get-measurement
 
       - if: ${{ matrix.pkg-name != 'lightning' }}
         name: Drop LAI from extensions
@@ -247,6 +272,14 @@ jobs:
           bash generate_checkpoints.sh
           ls -l checkpoints/
 
+      - id: measurement-setup-complete
+        name: Record Measurement After Test Setup
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Test setup complete
+          task: get-measurement
+
       - name: Testing Warnings
         run: python utilities/test_warnings.py
         working-directory: tests/tests_pytorch
@@ -259,28 +292,20 @@ jobs:
             --junitxml=junit.xml -o junit_family=legacy
         working-directory: tests/tests_pytorch
 
+      - id: measurement-testing
+        name: Record Measurement After Testing
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: PyTorch testing
+          task: get-measurement
+
       - if: success()
         name: Statistics
         run: |
           coverage report
           coverage xml
         working-directory: tests/tests_pytorch
-
-      # - if: ${{ !cancelled() }}
-      #   name: Upload test results to Codecov
-      #   uses: codecov/test-results-action@v1
-      #   with:
-      #     token: ${{ secrets.CODECOV_TOKEN }}
-
-      # - continue-on-error: true
-        # name: Upload coverage to Codecov
-        # uses: codecov/codecov-action@v5
-        # with:
-        #   fail_ci_if_error: false
-        #   file: tests/tests_pytorch/coverage.xml
-        #   flags: ${{ env.COVERAGE_SCOPE }},cpu,pytest-full,python${{ matrix.python-version }},pytorch${{ matrix.pytorch-version }}
-        #   name: CPU-coverage
-        #   token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Display Energy Results
         id: display-measurement
@@ -295,7 +320,7 @@ jobs:
       - name: Upload Energy Consumption Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: total-energy-consumption
+          name: total-energy-consumption-${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.pytorch-version }}-${{ matrix.pkg-name }}
           path: total_energy_consumption.json
 
   pl-cpu-guardian:
@@ -304,12 +329,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Start Energy Measurement
+        id: start-measurement-guardian
         uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
         with:
           json-output: true
           task: start-measurement
 
       - run: echo "${{ needs.pl-cpu.result }}"
+
+      - id: measurement-check
+        name: Record Measurement After Status Check
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Status check
+          task: get-measurement
 
       - if: needs.pl-cpu.result == 'failure'
         name: failing...
@@ -321,17 +355,17 @@ jobs:
         timeout-minutes: 1
 
       - name: Display Energy Results
-        id: display-measurement
+        id: display-measurement-guardian
         uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
         with:
           json-output: true
           task: display-results
 
       - name: Save Total Energy Consumption Data
-        run: echo '${{ steps.display-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+        run: echo '${{ steps.display-measurement-guardian.outputs.data-total-json }}' > total_energy_consumption.json
 
       - name: Upload Energy Consumption Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: total-energy-consumption
+          name: total-energy-consumption-guardian
           path: total_energy_consumption.json
