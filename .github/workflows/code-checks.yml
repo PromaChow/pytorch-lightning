@@ -1,51 +1,68 @@
 name: Code check
-
 on:
   push:
-    branches: [master, "release/*"]
-  pull_request:
-    branches: [master, "release/*"]
-    paths:
-      - ".actions/*"
-      - ".github/workflows/code-checks.yml"
-      - "requirements/**"
-      - "src/**"
-      - "pyproject.toml" # includes mypy config
-      - "!requirements/docs.txt"
-      - "!requirements/*/docs.txt"
-      - "!*.md"
-      - "!**/*.md"
+    branches:
+      - main
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref }}
 defaults:
   run:
     shell: bash
-
 jobs:
   mypy:
     runs-on: ubuntu-22.04
     steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
+          python-version: '3.11'
       - name: Mypy cache
         uses: actions/cache@v4
         with:
-          path: .mypy_cache
           key: mypy-${{ hashFiles('requirements/typing.txt') }}
-
-      - name: Install dependencies
-        env:
+          path: .mypy_cache
+      - env:
           FREEZE_REQUIREMENTS: 1
-        timeout-minutes: 20
-        run: |
-          pip install -e '.[pytorch-all,fabric-all]' -r requirements/typing.txt
+        name: Install dependencies
+        run: 'pip install -e ''.[pytorch-all,fabric-all]'' -r requirements/typing.txt
+
           pip list
 
+          '
+        timeout-minutes: 20
+      - id: measurement-5
+        name: Record Measurement After Install dependencies
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Install dependencies
+          task: get-measurement
       - name: Check typing
         run: mypy
+      - id: measurement-7
+        name: Record Measurement After Check typing
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Check typing
+          task: get-measurement
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json

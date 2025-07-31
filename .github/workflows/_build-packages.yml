@@ -1,70 +1,124 @@
 name: Call building packages
-
 on:
-  workflow_call:
-    inputs:
-      artifact-name:
-        description: "Unique name for collecting artifacts"
-        required: true
-        type: string
-      pkg-names:
-        description: "list package names to be build in json format"
-        required: false
-        type: string
-        default: |
-          ["lightning", "fabric", "pytorch"]
+  push:
+    branches:
+      - main
 
 defaults:
   run:
     shell: bash
-
 jobs:
   build-packages:
     runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        pkg-name: ${{ fromJSON(inputs.pkg-names) }}
     steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
-
-      - run: python -c "print('NB_DIRS=' + str(2 if '${{ matrix.pkg-name }}' == 'pytorch' else 1))" >> $GITHUB_ENV
+          python-version: 3.x
+      - run: python -c "print('NB_DIRS=' + str(2 if '${{ matrix.pkg-name }}' == 'pytorch'
+          else 1))" >> $GITHUB_ENV
+      - id: measurement-4
+        name: Record Measurement After Step
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Step
+          task: get-measurement
       - name: Build & check package
         uses: ./.github/actions/pkg-check
         with:
-          pkg-name: ${{ matrix.pkg-name }}
           nb-dirs: ${{ env.NB_DIRS }}
+          pkg-name: ${{ matrix.pkg-name }}
+      - run: 'mkdir -p pypi/${{ matrix.pkg-name }}
 
-      - run: |
-          mkdir -p pypi/${{ matrix.pkg-name }}
           cp dist/* pypi/${{ matrix.pkg-name }}/
 
+          '
+      - id: measurement-7
+        name: Record Measurement After Step
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Step
+          task: get-measurement
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.artifact-name }}-${{ matrix.pkg-name }}
           path: pypi
           retention-days: 1
-
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
+    strategy:
+      matrix:
+        pkg-name: ${{ fromJSON(inputs.pkg-names) }}
   merge-artifacts:
     needs: build-packages
     runs-on: ubuntu-22.04
     steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
       - uses: actions/download-artifact@v4
-        with: # download all build artifacts
-          pattern: ${{ inputs.artifact-name }}-*
+        with:
           merge-multiple: true
           path: pypi
-      - run: |
-          sudo apt-get install -y tree
+          pattern: ${{ inputs.artifact-name }}-*
+      - run: 'sudo apt-get install -y tree
+
           tree pypi
 
+          '
+      - id: measurement-3
+        name: Record Measurement After Step
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Step
+          task: get-measurement
       - name: Keep artifact
-        run: python -c "print('DAYS=' + str(5 if '${{ github.event_name }}'.startswith('pull_request') else 0))" >> $GITHUB_ENV
+        run: python -c "print('DAYS=' + str(5 if '${{ github.event_name }}'.startswith('pull_request')
+          else 0))" >> $GITHUB_ENV
+      - id: measurement-5
+        name: Record Measurement After Keep artifact
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Keep artifact
+          task: get-measurement
       - uses: actions/upload-artifact@v4
         with:
+          if-no-files-found: error
           name: ${{ inputs.artifact-name }}
           path: pypi
           retention-days: ${{ env.DAYS }}
-          if-no-files-found: error
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json

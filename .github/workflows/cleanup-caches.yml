@@ -1,33 +1,47 @@
 name: cleanup caches on a branch
 on:
-  pull_request:
-    types: [closed]
+  push:
+    branches:
+      - main
 
 jobs:
   pr-cleanup:
-    # https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows#force-deleting-cache-entries
     runs-on: ubuntu-latest
     steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
       - name: Check out code
         uses: actions/checkout@v4
-
-      - name: Cleanup
-        run: |
-          gh extension install actions/gh-actions-cache
-
-          REPO=${{ github.repository }}
-          BRANCH="refs/pull/${{ github.event.pull_request.number }}/merge"
-
-          echo "Fetching list of cache key"
-          cacheKeysForPR=$(gh actions-cache list -R $REPO -B $BRANCH | cut -f 1 )
-
-          ## Setting this to not fail the workflow while deleting cache keys.
-          set +e
-          echo "Deleting caches..."
-          for cacheKey in $cacheKeysForPR
-          do
-              gh actions-cache delete $cacheKey -R $REPO -B $BRANCH --confirm
-          done
-          echo "Done"
-        env:
+      - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: Cleanup
+        run: "gh extension install actions/gh-actions-cache\n\nREPO=${{ github.repository\
+          \ }}\nBRANCH=\"refs/pull/${{ github.event.pull_request.number }}/merge\"\
+          \n\necho \"Fetching list of cache key\"\ncacheKeysForPR=$(gh actions-cache\
+          \ list -R $REPO -B $BRANCH | cut -f 1 )\n\n## Setting this to not fail the\
+          \ workflow while deleting cache keys.\nset +e\necho \"Deleting caches...\"\
+          \nfor cacheKey in $cacheKeysForPR\ndo\n    gh actions-cache delete $cacheKey\
+          \ -R $REPO -B $BRANCH --confirm\ndone\necho \"Done\"\n"
+      - id: measurement-3
+        name: Record Measurement After Cleanup
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Cleanup
+          task: get-measurement
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json

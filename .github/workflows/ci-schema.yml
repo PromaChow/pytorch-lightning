@@ -2,14 +2,37 @@ name: Check Schema
 
 on:
   push:
-    branches: [master, "release/*"]
-  pull_request:
-    branches: [master, "release/*"]
+    branches:
+      - main
 
 jobs:
-  check:
+  measure-energy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
+
+      - id: final-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
+
+  check-schema:
     uses: Lightning-AI/utilities/.github/workflows/check-schema.yml@v0.14.3
+    needs: measure-energy
     with:
-      # skip azure due to the wrong schema file by MSFT
-      # https://github.com/Lightning-AI/lightning-flash/pull/1455#issuecomment-1244793607
       azure-dir: ""

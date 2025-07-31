@@ -1,22 +1,35 @@
 name: Probot
-
 on:
-  issues:
-    types: [labeled]
-  # should use `pull_request_target` but it's blocked by
-  # https://github.com/probot/probot/issues/1635
-  # so this job will not run on forks until the above is fixed
-  pull_request:
-    types: [labeled, ready_for_review]
+  push:
+    branches:
+      - main
 
 jobs:
   auto-cc:
-    runs-on: ubuntu-latest
     if: github.event_name == 'issue' || github.event.pull_request.draft == false
-    timeout-minutes: 5
+    runs-on: ubuntu-latest
     steps:
-      - uses: Lightning-AI/probot@v1
-        env:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
+      - env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: Lightning-AI/probot@v1
         with:
           job: auto-cc
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
+    timeout-minutes: 5

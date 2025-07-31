@@ -1,40 +1,56 @@
 name: Clear cache weekly
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/call-clear-cache.yml"
-  workflow_dispatch:
-    inputs:
-      pattern:
-        description: "pattern for cleaning cache"
-        default: "pip-|conda"
-        required: false
-        type: string
-      age-days:
-        description: "setting the age of caches in days to be dropped"
-        required: true
-        type: number
-        default: 5
+  push:
+    branches:
+      - main
   schedule:
-    # on Sundays
-    - cron: "0 0 * * 0"
+    - cron: "0 0 * * 0" # Weekly on Sunday
+  workflow_dispatch:
 
 jobs:
+  measure-energy-before-clear:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
+
+      - id: final-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
+
   cron-clear:
     if: github.event_name == 'schedule' || github.event_name == 'pull_request'
     uses: Lightning-AI/utilities/.github/workflows/cleanup-caches.yml@v0.14.3
+    needs: measure-energy-before-clear
     with:
-      scripts-ref: v0.14.3
-      dry-run: ${{ github.event_name == 'pull_request' }}
-      pattern: "latest|docs"
       age-days: 7
+      dry-run: ${{ github.event_name == 'pull_request' }}
+      pattern: latest|docs
+      scripts-ref: v0.14.3
 
   direct-clear:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     uses: Lightning-AI/utilities/.github/workflows/cleanup-caches.yml@v0.14.3
+    needs: measure-energy-before-clear
     with:
-      scripts-ref: v0.14.3
+      age-days: ${{ fromJSON(inputs.age-days || '0') }}
       dry-run: ${{ github.event_name == 'pull_request' }}
-      pattern: ${{ inputs.pattern || 'pypi_wheels' }} # setting str in case of PR / debugging
-      age-days: ${{ fromJSON(inputs.age-days) || 0 }} # setting 0 in case of PR / debugging
+      pattern: ${{ inputs.pattern || 'pypi_wheels' }}
+      scripts-ref: v0.14.3

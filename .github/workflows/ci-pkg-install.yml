@@ -1,30 +1,12 @@
 name: Package
-
-# see: https://help.github.com/en/actions/reference/events-that-trigger-workflows
 on:
   push:
-    branches: [master, "release/*"]
-  pull_request:
-    branches: [master, "release/*"]
-    types: [opened, reopened, ready_for_review, synchronize] # added `ready_for_review` since draft is skipped
-    paths:
-      - ".actions/*"
-      - "requirements/ci.txt"
-      - ".github/actions/pkg-check/*"
-      - ".github/actions/pkg-install/*"
-      - ".github/workflows/_build-packages.yml"
-      - ".github/workflows/ci-pkg-install.yml"
-      - "setup.py"
-      - "src/**"
-      - "requirements/**"
-      - "!requirements/docs.txt"
-      - "!requirements/*/docs.txt"
-      - "!*.md"
-      - "!**/*.md"
+    branches:
+      - main
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref }}
 
 defaults:
   run:
@@ -32,9 +14,47 @@ defaults:
 
 jobs:
   build-packages:
-    uses: ./.github/workflows/_build-packages.yml
-    with:
+    runs-on: ubuntu-latest
+    outputs:
       artifact-name: dist-packages-${{ github.sha }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
+
+      # Add your actual package building steps here
+      - name: Build packages
+        run: |
+          # Add your build commands here
+          mkdir -p dist
+          echo "Package built" > dist/package.txt
+
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.display-measurement.outputs.data-total-json }}' > total_energy_consumption_build.json
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-packages-${{ github.sha }}
+          path: dist/
+
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-energy-consumption
+          path: total_energy_consumption_build.json
 
   install-pkg:
     needs: build-packages
@@ -42,14 +62,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ["ubuntu-22.04", "macOS-14", "windows-2022"]
-        pkg-name: ["fabric", "pytorch", "lightning", "notset"]
+        os: [ubuntu-22.04, macOS-14, windows-2022]
+        pkg-name: [fabric, pytorch, lightning, notset]
         python-version: ["3.9", "3.11"]
+
     steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
+
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
       - uses: actions/download-artifact@v4
         with:
           name: dist-packages-${{ github.sha }}
@@ -58,41 +87,45 @@ jobs:
       - name: Set package dir
         run: |
           python -c "print('PKG_DIR=' + {'notset': 'lightning'}.get('${{matrix.pkg-name}}', '${{matrix.pkg-name}}'))" >> $GITHUB_ENV
+
       - name: Install package - wheel & archive
-        uses: ./.github/actions/pkg-install
         timeout-minutes: 25
+        uses: ./.github/actions/pkg-install
         with:
           pkg-folder: dist/${{ env.PKG_DIR }}
           pkg-name: ${{ matrix.pkg-name }}
 
       - name: DocTests actions
-        working-directory: .actions/
         run: |
           pip install -q pytest -r requirements.txt
           python -m pytest assistant.py
+        working-directory: .actions/
 
-      - name: Adjust code for standalone
-        if: contains(fromJSON('["fabric", "pytorch"]'), matrix.pkg-name)
+      - if: contains(fromJSON('["fabric", "pytorch"]'), matrix.pkg-name)
+        name: Adjust code for standalone
         run: |
           python .actions/assistant.py copy_replace_imports --source_dir="./src" \
             --source_import="lightning.pytorch,lightning.fabric" \
             --target_import="pytorch_lightning,lightning_fabric"
+
       - name: Rename src folders
-        working-directory: src/
         run: |
-          python -c "n = '${{matrix.pkg-name}}' ; n = n if n in ('fabric', 'pytorch') else '' ; print('PKG_NAME=' + n)" >> $GITHUB_ENV
+          python -c "n = '${{matrix.pkg-name}}'; n = n if n in ('fabric', 'pytorch') else ''; print('PKG_NAME=' + n)" >> $GITHUB_ENV
           rm -f ./*/__*.py
           rm -f ./**/__*.py
-          mv lightning lit  # rename lightning folder to prevent accidental local imports
-      - name: drop Secondary doctest
-        if: ${{ matrix.pkg-name == 'lightning' || matrix.pkg-name == 'notset' }}
-        working-directory: src/lit
+          mv lightning lit
+        working-directory: src/
+
+      - if: ${{ matrix.pkg-name == 'lightning' || matrix.pkg-name == 'notset' }}
+        name: Drop secondary doctest
         run: |
           items=("data")
           for item in "${items[@]}"; do
             echo "Removing $item"
             rm -rf $item
           done
+        working-directory: src/lit
+
       - name: Install pytest doctest extension
         run: |
           pip install -q -r requirements/doctests.txt
@@ -100,20 +133,61 @@ jobs:
 
       - name: DocTest package
         env:
-          LIGHTING_TESTING: 1 # path for require wrapper
+          LIGHTING_TESTING: 1
           PY_IGNORE_IMPORTMISMATCH: 1
-        run: python -m pytest src/lit/${PKG_NAME} --ignore-glob="**/cli/*-template/**" --doctest-plus
+        run: |
+          python -m pytest src/lit/${PKG_NAME} --ignore-glob="**/cli/*-template/**" --doctest-plus
+
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.display-measurement.outputs.data-total-json }}' > total_energy_consumption_${{ matrix.os }}_${{ matrix.pkg-name }}_${{ matrix.python-version }}.json
+
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-energy-consumption-${{ matrix.os }}-${{ matrix.pkg-name }}-${{ matrix.python-version }}
+          path: total_energy_consumption_${{ matrix.os }}_${{ matrix.pkg-name }}_${{ matrix.python-version }}.json
 
   install-pkg-guardian:
-    runs-on: ubuntu-latest
-    needs: install-pkg
     if: always()
+    needs: install-pkg
+    runs-on: ubuntu-latest
     steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
+
       - run: echo "${{ needs.install-pkg.result }}"
-      - name: failing...
-        if: needs.install-pkg.result == 'failure'
+
+      - if: needs.install-pkg.result == 'failure'
+        name: Failing...
         run: exit 1
-      - name: cancelled or skipped...
-        if: contains(fromJSON('["cancelled", "skipped"]'), needs.install-pkg.result)
-        timeout-minutes: 1
+
+      - if: contains(fromJSON('["cancelled", "skipped"]'), needs.install-pkg.result)
+        name: Cancelled or Skipped
         run: sleep 90
+        timeout-minutes: 2
+
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.display-measurement.outputs.data-total-json }}' > total_energy_consumption_guardian.json
+
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardian-energy-consumption
+          path: total_energy_consumption_guardian.json
