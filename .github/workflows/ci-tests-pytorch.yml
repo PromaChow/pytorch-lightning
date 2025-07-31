@@ -3,7 +3,7 @@ name: Test PyTorch
 on:
   push:
     branches:
-      - main
+      - temp
 
 concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
